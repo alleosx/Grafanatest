@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  nginx_exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    ports:
+      - "9113:9113"
+    command:
+      - -nginx.scrape-uri 
+      - http://kanban-ui:80/stub_status
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+
+  postgres_exporter:
+    image: wrouesnel/postgres_exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://username:password@host:port/dbname"
+
+  kanban-postgres:
+    image: postgres:14.12-bullseye
+    container_name: kanban-postgres
+    environment:
+      - POSTGRES_DB=kanban
+      - POSTGRES_USER=kanban
+      - POSTGRES_PASSWORD=kanban
+    volumes:
+      - kanban-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=mail@test.com
+      - PGADMIN_DEFAULT_PASSWORD=kanban
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+
+  kanban-app:
+    build: ./kanban-app
+    container_name: kanban-app
+    environment:
+      - DB_SERVER=kanban-postgres
+      - POSTGRES_DB=kanban
+      - POSTGRES_USER=kanban
+      - POSTGRES_PASSWORD=kanban
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kanban-postgres
+
+  kanban-ui:
+    build: ./kanban-ui
+    container_name: kanban-ui
+    ports:
+      - "4200:80"
+    depends_on:
+      - kanban-app
+
+  reverse-proxy:
+    image: nginx
+    container_name: reverse-proxy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - kanban-postgres
+      - kanban-ui
+      - kanban-app
+      - pgadmin
+      - prometheus
+      - grafana
+ 
+volumes:
+  kanban-data:
+  pgadmin-data:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
